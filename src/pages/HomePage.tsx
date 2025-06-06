@@ -159,7 +159,7 @@ const HomePage: React.FC = () => {
       <section className="text-center py-12 px-4 sm:px-6 lg:px-8 rounded-3xl bg-gradient-to-br from-purple-600 to-blue-500 text-white mb-12">
         <div className="max-w-3xl mx-auto">
           <h1 className="text-4xl md:text-5xl font-bold mb-6">
-            Create Beautiful QR Codes in Seconds
+            Custom QR Code Generator
           </h1>
           <p className="text-xl md:text-2xl mb-8 text-purple-100">
             The most advanced QR code generator with powerful customization options

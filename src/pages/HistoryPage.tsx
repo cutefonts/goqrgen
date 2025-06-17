@@ -5,6 +5,7 @@ import { QRCodeCanvas } from 'qrcode.react';
 import { Trash2, Download, Search, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import { toPng } from 'html-to-image';
+import toast from 'react-hot-toast';
 
 const HistoryPage: React.FC = () => {
   const { history, clearHistory, removeFromHistory } = useHistory();
@@ -19,20 +20,52 @@ const HistoryPage: React.FC = () => {
 
   const handleDownload = async (id: string) => {
     const qrItem = history.find(item => item?.id === id);
-    if (!qrItem) return;
+    if (!qrItem) {
+      toast.error('QR code not found');
+      return;
+    }
     
-    if (qrItem.preview) {
-      saveAs(qrItem.preview, `${(qrItem.name || 'qr-code').replace(/\s+/g, '-').toLowerCase()}.png`);
-    } else {
-      const qrElement = document.getElementById(`qr-${id}`);
-      if (qrElement) {
-        try {
-          const dataUrl = await toPng(qrElement);
-          saveAs(dataUrl, `${(qrItem.name || 'qr-code').replace(/\s+/g, '-').toLowerCase()}.png`);
-        } catch (error) {
-          console.error('Error generating QR code image:', error);
+    try {
+      if (qrItem.preview) {
+        // Use existing preview
+        saveAs(qrItem.preview, `${(qrItem.name || 'qr-code').replace(/[^a-z0-9]/gi, '-').toLowerCase()}.png`);
+        toast.success('QR code downloaded successfully!');
+      } else {
+        // Generate new image
+        const qrElement = document.getElementById(`qr-${id}`);
+        if (qrElement) {
+          const dataUrl = await toPng(qrElement, {
+            quality: 1.0,
+            pixelRatio: 2,
+          });
+          saveAs(dataUrl, `${(qrItem.name || 'qr-code').replace(/[^a-z0-9]/gi, '-').toLowerCase()}.png`);
+          toast.success('QR code downloaded successfully!');
+        } else {
+          throw new Error('QR code element not found');
         }
       }
+    } catch (error) {
+      console.error('Error downloading QR code:', error);
+      toast.error('Failed to download QR code. Please try again.');
+    }
+  };
+
+  const handleClearHistory = () => {
+    if (history.length === 0) {
+      toast.error('History is already empty');
+      return;
+    }
+    
+    if (window.confirm('Are you sure you want to clear all QR code history? This action cannot be undone.')) {
+      clearHistory();
+      toast.success('History cleared successfully!');
+    }
+  };
+
+  const handleRemoveItem = (id: string) => {
+    if (window.confirm('Are you sure you want to remove this QR code from history?')) {
+      removeFromHistory(id);
+      toast.success('QR code removed from history');
     }
   };
 
@@ -43,6 +76,9 @@ const HistoryPage: React.FC = () => {
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString);
+      if (isNaN(date.getTime())) {
+        return 'Invalid date';
+      }
       return date.toLocaleString();
     } catch (error) {
       return 'Invalid date';
@@ -62,7 +98,12 @@ const HistoryPage: React.FC = () => {
       geolocation: 'Location',
     };
     
-    return typeLabels[type] || type;
+    return typeLabels[type] || type.charAt(0).toUpperCase() + type.slice(1);
+  };
+
+  const truncateText = (text: string, maxLength: number = 50) => {
+    if (!text) return 'No content';
+    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
   };
 
   return (
@@ -74,10 +115,12 @@ const HistoryPage: React.FC = () => {
       </Helmet>
 
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-800 dark:text-white">History</h1>
+        <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
+          History ({history.length})
+        </h1>
         
         <button
-          onClick={clearHistory}
+          onClick={handleClearHistory}
           className="bg-red-100 text-red-600 hover:bg-red-200 px-4 py-2 rounded-lg flex items-center transition-colors dark:bg-red-900 dark:text-red-300 dark:hover:bg-red-800"
           disabled={history.length === 0}
         >
@@ -92,9 +135,15 @@ const HistoryPage: React.FC = () => {
             <Info className="w-8 h-8 text-gray-400 dark:text-gray-500" />
           </div>
           <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">No QR Codes Yet</h2>
-          <p className="text-gray-600 dark:text-gray-400">
+          <p className="text-gray-600 dark:text-gray-400 mb-4">
             Your generated QR codes will appear here. Start by creating a new QR code.
           </p>
+          <a
+            href="/generator"
+            className="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors"
+          >
+            Create Your First QR Code
+          </a>
         </div>
       ) : (
         <>
@@ -131,7 +180,7 @@ const HistoryPage: React.FC = () => {
                       style={{ width: 80, height: 80 }}
                     >
                       <QRCodeCanvas
-                        value={item.value || ''}
+                        value={item.value || 'Empty'}
                         size={60}
                         fgColor={item.customization?.fgColor || '#000000'}
                         bgColor={item.customization?.bgColor || '#FFFFFF'}
@@ -144,7 +193,7 @@ const HistoryPage: React.FC = () => {
                       <h3 className="text-lg font-semibold text-gray-800 dark:text-white truncate">
                         {item.name || 'Untitled QR Code'}
                       </h3>
-                      <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                      <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-1">
                         <span className="bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-300 text-xs rounded px-2 py-0.5 mr-2">
                           {getTypeLabel(item.type)}
                         </span>
@@ -152,8 +201,8 @@ const HistoryPage: React.FC = () => {
                           {formatDate(item.created)}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 truncate mt-1">
-                        {item.value || 'No content'}
+                      <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                        {truncateText(item.value)}
                       </p>
                     </div>
                     
@@ -161,21 +210,21 @@ const HistoryPage: React.FC = () => {
                       <button
                         onClick={() => handleDownload(item.id)}
                         className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-                        title="Download"
+                        title="Download QR Code"
                       >
                         <Download className="w-5 h-5" />
                       </button>
                       <button
-                        onClick={() => removeFromHistory(item.id)}
+                        onClick={() => handleRemoveItem(item.id)}
                         className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-                        title="Delete"
+                        title="Remove from History"
                       >
                         <Trash2 className="w-5 h-5" />
                       </button>
                       <button
                         onClick={() => toggleDetails(item.id)}
                         className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-                        title="Details"
+                        title="Toggle Details"
                       >
                         {detailsId === item.id ? (
                           <ChevronUp className="w-5 h-5" />
@@ -193,7 +242,7 @@ const HistoryPage: React.FC = () => {
                           <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Content
                           </h4>
-                          <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded-lg break-all text-sm text-gray-600 dark:text-gray-400">
+                          <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded-lg break-all text-sm text-gray-600 dark:text-gray-400 max-h-32 overflow-y-auto">
                             {item.value || 'No content'}
                           </div>
                         </div>
@@ -203,11 +252,17 @@ const HistoryPage: React.FC = () => {
                           </h4>
                           <div className="grid grid-cols-2 gap-2 text-sm">
                             <div className="flex items-center">
-                              <span className="w-4 h-4 rounded mr-2" style={{ backgroundColor: item.customization?.fgColor || '#000000' }}></span>
+                              <span 
+                                className="w-4 h-4 rounded mr-2 border border-gray-300" 
+                                style={{ backgroundColor: item.customization?.fgColor || '#000000' }}
+                              ></span>
                               <span className="text-gray-600 dark:text-gray-400">Foreground</span>
                             </div>
                             <div className="flex items-center">
-                              <span className="w-4 h-4 rounded mr-2" style={{ backgroundColor: item.customization?.bgColor || '#FFFFFF' }}></span>
+                              <span 
+                                className="w-4 h-4 rounded mr-2 border border-gray-300" 
+                                style={{ backgroundColor: item.customization?.bgColor || '#FFFFFF' }}
+                              ></span>
                               <span className="text-gray-600 dark:text-gray-400">Background</span>
                             </div>
                             <div className="text-gray-600 dark:text-gray-400">

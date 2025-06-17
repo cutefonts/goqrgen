@@ -14,13 +14,13 @@ const ScannerPage: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const scanIntervalRef = useRef<number | null>(null);
   
   useEffect(() => {
     const checkCameraPermission = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         setHasCameraPermission(true);
-        streamRef.current = stream;
         
         // Get list of available cameras
         const devices = await navigator.mediaDevices.enumerateDevices();
@@ -33,7 +33,6 @@ const ScannerPage: React.FC = () => {
         
         // Stop the stream we just created for the permission check
         stream.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
         
       } catch (err) {
         console.error('Camera permission error:', err);
@@ -48,7 +47,9 @@ const ScannerPage: React.FC = () => {
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
+      }
+      if (scanIntervalRef.current) {
+        clearInterval(scanIntervalRef.current);
       }
     };
   }, []);
@@ -66,21 +67,37 @@ const ScannerPage: React.FC = () => {
       setResult(null);
       
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: selectedCamera }
+        video: { 
+          deviceId: selectedCamera,
+          facingMode: 'environment' // Prefer back camera on mobile
+        }
       });
       
       streamRef.current = stream;
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        await videoRef.current.play();
       }
       
+      // Start scanning after video is ready
+      setTimeout(() => {
+        startScanningLoop();
+      }, 500);
+      
+    } catch (err) {
+      console.error('Error starting scanner:', err);
+      setError('Failed to start the camera. Please make sure you have granted camera permissions.');
+      setScanning(false);
+    }
+  };
+
+  const startScanningLoop = async () => {
+    try {
       const jsQR = (await import('jsqr')).default;
       
-      // Start scanning loop
       const scanQRCode = () => {
-        if (!videoRef.current || !canvasRef.current || !streamRef.current) {
+        if (!videoRef.current || !canvasRef.current || !streamRef.current || !scanning) {
           return;
         }
         
@@ -99,21 +116,18 @@ const ScannerPage: React.FC = () => {
           if (code && code.data) {
             setResult(code.data);
             stopScanner();
+            toast.success('QR code scanned successfully!');
             return;
           }
         }
-        
-        // Continue scanning if no QR code found and still scanning
-        if (scanning) {
-          requestAnimationFrame(scanQRCode);
-        }
       };
       
-      requestAnimationFrame(scanQRCode);
+      // Use interval instead of requestAnimationFrame for better performance
+      scanIntervalRef.current = window.setInterval(scanQRCode, 100);
       
     } catch (err) {
-      console.error('Error starting scanner:', err);
-      setError('Failed to start the camera. Please make sure you have granted camera permissions.');
+      console.error('Error loading QR scanner:', err);
+      setError('Failed to load QR scanner. Please try again.');
       setScanning(false);
     }
   };
@@ -121,6 +135,11 @@ const ScannerPage: React.FC = () => {
   // Stop scanning
   const stopScanner = () => {
     setScanning(false);
+    
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current);
+      scanIntervalRef.current = null;
+    }
     
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
@@ -135,26 +154,29 @@ const ScannerPage: React.FC = () => {
   // Reset the scanner
   const resetScanner = () => {
     setResult(null);
-    startScanner();
+    setError(null);
+    if (!scanning) {
+      startScanner();
+    }
   };
   
   // Copy result to clipboard
-  const copyToClipboard = () => {
+  const copyToClipboard = async () => {
     if (result) {
-      navigator.clipboard.writeText(result)
-        .then(() => {
-          alert('QR code content copied to clipboard!');
-        })
-        .catch(err => {
-          console.error('Failed to copy:', err);
-        });
+      try {
+        await navigator.clipboard.writeText(result);
+        toast.success('QR code content copied to clipboard!');
+      } catch (err) {
+        console.error('Failed to copy:', err);
+        toast.error('Failed to copy to clipboard');
+      }
     }
   };
   
   // Open URL if the result is a valid URL
   const openUrl = () => {
     if (result && (result.startsWith('http://') || result.startsWith('https://'))) {
-      window.open(result, '_blank');
+      window.open(result, '_blank', 'noopener,noreferrer');
     }
   };
   
@@ -184,7 +206,8 @@ const ScannerPage: React.FC = () => {
       
       // Create an image from the file
       const img = new Image();
-      img.src = URL.createObjectURL(file);
+      const objectUrl = URL.createObjectURL(file);
+      img.src = objectUrl;
       
       img.onload = async () => {
         try {
@@ -214,16 +237,20 @@ const ScannerPage: React.FC = () => {
             throw new Error('No QR code found in the image');
           }
         } catch (err) {
-          throw new Error('Failed to process the image');
+          const errorMessage = err instanceof Error ? err.message : 'Failed to process the image';
+          setError(errorMessage);
+          toast.error(errorMessage);
         } finally {
           // Clean up
-          URL.revokeObjectURL(img.src);
+          URL.revokeObjectURL(objectUrl);
         }
       };
       
       img.onerror = () => {
-        URL.revokeObjectURL(img.src);
-        throw new Error('Failed to load the image');
+        URL.revokeObjectURL(objectUrl);
+        const errorMessage = 'Failed to load the image';
+        setError(errorMessage);
+        toast.error(errorMessage);
       };
       
     } catch (err) {
@@ -231,6 +258,9 @@ const ScannerPage: React.FC = () => {
       setError(errorMessage);
       toast.error(errorMessage);
     }
+    
+    // Reset the input value
+    e.target.value = '';
   };
   
   return (
@@ -265,26 +295,25 @@ const ScannerPage: React.FC = () => {
             </div>
           ) : (
             <>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Select Camera
-                </label>
-                <select
-                  value={selectedCamera}
-                  onChange={(e) => setSelectedCamera(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 dark:bg-gray-700 dark:text-white"
-                  disabled={scanning}
-                >
-                  {cameras.length === 0 && (
-                    <option value="">Loading cameras...</option>
-                  )}
-                  {cameras.map((camera) => (
-                    <option key={camera.deviceId} value={camera.deviceId}>
-                      {camera.label || `Camera ${cameras.indexOf(camera) + 1}`}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {cameras.length > 0 && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Select Camera
+                  </label>
+                  <select
+                    value={selectedCamera}
+                    onChange={(e) => setSelectedCamera(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 dark:bg-gray-700 dark:text-white"
+                    disabled={scanning}
+                  >
+                    {cameras.map((camera, index) => (
+                      <option key={camera.deviceId} value={camera.deviceId}>
+                        {camera.label || `Camera ${index + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               
               <div className="relative aspect-video bg-gray-900 rounded-lg overflow-hidden mb-4">
                 {scanning ? (
@@ -294,10 +323,14 @@ const ScannerPage: React.FC = () => {
                       className="absolute inset-0 w-full h-full object-cover"
                       muted
                       playsInline
+                      autoPlay
                     ></video>
                     <div className="absolute inset-0 border-[3px] border-white border-opacity-60 rounded-lg"></div>
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="w-48 h-48 border-2 border-purple-500 border-opacity-70 rounded-lg"></div>
+                    </div>
+                    <div className="absolute top-4 left-4 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
+                      Scanning...
                     </div>
                   </>
                 ) : (
@@ -374,7 +407,7 @@ const ScannerPage: React.FC = () => {
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg flex items-center transition-colors"
                 >
                   <Copy className="w-4 h-4 mr-2" />
-                  Copy to Clipboard
+                  Copy
                 </button>
                 
                 {isUrl(result) && (

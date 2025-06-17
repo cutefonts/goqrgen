@@ -1,6 +1,5 @@
 import React from 'react';
 import { AlertCircle, CheckCircle } from 'lucide-react';
-import { validateQRCode } from 'qrcode-validator';
 
 interface ValidationResult {
   valid: boolean;
@@ -16,6 +15,41 @@ interface QRCodeValidatorProps {
   qrValue: string;
   customization: any;
 }
+
+// Mock validation function since qrcode-validator doesn't exist
+const validateQRCode = async (qrValue: string, customization: any): Promise<ValidationResult> => {
+  // Simulate validation logic
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  
+  if (!qrValue || qrValue.trim().length === 0) {
+    return {
+      valid: false,
+      error: 'QR code content cannot be empty',
+      details: { readability: 0, errorCorrection: 'unknown', version: 0 }
+    };
+  }
+  
+  if (qrValue.length > 2953) {
+    return {
+      valid: false,
+      error: 'QR code content is too long',
+      details: { readability: 0, errorCorrection: customization.level || 'M', version: 0 }
+    };
+  }
+  
+  // Calculate readability based on content length and error correction
+  const maxLength = customization.level === 'H' ? 1273 : customization.level === 'Q' ? 1663 : customization.level === 'M' ? 2331 : 2953;
+  const readability = Math.max(0, Math.min(100, 100 - (qrValue.length / maxLength) * 50));
+  
+  return {
+    valid: true,
+    details: {
+      readability: Math.round(readability),
+      errorCorrection: customization.level || 'M',
+      version: Math.ceil(qrValue.length / 100)
+    }
+  };
+};
 
 const QRCodeValidator: React.FC<QRCodeValidatorProps> = ({ qrValue, customization }) => {
   const [validationResult, setValidationResult] = React.useState<ValidationResult | null>(null);

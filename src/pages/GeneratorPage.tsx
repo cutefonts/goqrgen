@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { QRCodeCanvas } from 'qrcode.react';
-import { Download, Image, Palette, Share, History as HistoryIcon, Edit } from 'lucide-react';
+import { Download, Image, Palette, Share, History as HistoryIcon, Edit, TestTube } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import { toPng, toJpeg, toSvg } from 'html-to-image';
 import { QRCodeData, QRCodeType, QRCodeCustomization } from '../types/qrTypes';
@@ -10,6 +10,8 @@ import QRCodeTypeSelector from '../components/generator/QRCodeTypeSelector';
 import QRCodeContentEditor from '../components/generator/QRCodeContentEditor';
 import QRCodeCustomizer from '../components/generator/QRCodeCustomizer';
 import DevicePreview from '../components/generator/DevicePreview';
+import QRCodeTester from '../components/tools/QRCodeTester';
+import MetaTags from '../components/seo/MetaTags';
 
 const GeneratorPage: React.FC = () => {
   const [qrType, setQrType] = useState<QRCodeType>('url');
@@ -25,7 +27,7 @@ const GeneratorPage: React.FC = () => {
     style: 'squares',
   });
   
-  const [activeTab, setActiveTab] = useState<'content' | 'customize'>('content');
+  const [activeTab, setActiveTab] = useState<'content' | 'customize' | 'test'>('content');
   const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
   
   const qrRef = useRef<HTMLDivElement>(null);
@@ -152,11 +154,12 @@ const GeneratorPage: React.FC = () => {
 
   return (
     <div className="animate-fadeIn">
-      <Helmet>
-        <title>QR Code Generator | Create QR Codes for Free</title>
-        <meta name="description" content="Generate custom QR codes for URLs, text, Wi-Fi, vCards, and more with GOQRGen's free QR Code Generator. Fast, easy, and no signup required!" />
-        <link rel="canonical" href="https://goqrgen.com/generator" />
-      </Helmet>
+      <MetaTags
+        title="QR Code Generator | Create Custom QR Codes Online | GOQRGen"
+        description="Generate custom QR codes for URLs, text, Wi-Fi, vCards, and more with GOQRGen's free QR Code Generator. Fast, easy, and no signup required!"
+        canonical="https://goqrgen.com/generator"
+        keywords="QR code generator, custom QR codes, free QR generator, QR code maker, online QR generator"
+      />
 
       <h1 className="text-3xl font-bold mb-6 text-gray-800 dark:text-white">
         QR Code Generator
@@ -187,9 +190,20 @@ const GeneratorPage: React.FC = () => {
               <Palette className="inline-block w-4 h-4 mr-2" />
               Customize
             </button>
+            <button
+              className={`px-4 py-2 font-medium ${
+                activeTab === 'test'
+                  ? 'text-purple-600 dark:text-purple-400 border-b-2 border-purple-600 dark:border-purple-400'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+              }`}
+              onClick={() => setActiveTab('test')}
+            >
+              <TestTube className="inline-block w-4 h-4 mr-2" />
+              Test
+            </button>
           </div>
 
-          {activeTab === 'content' ? (
+          {activeTab === 'content' && (
             <>
               <div className="mb-6">
                 <label htmlFor="qrName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -216,10 +230,19 @@ const GeneratorPage: React.FC = () => {
                 onChange={setQrValue} 
               />
             </>
-          ) : (
+          )}
+
+          {activeTab === 'customize' && (
             <QRCodeCustomizer 
               customization={customization} 
               onChange={setCustomization} 
+            />
+          )}
+
+          {activeTab === 'test' && (
+            <QRCodeTester 
+              qrValue={qrValue}
+              customization={customization}
             />
           )}
         </div>
